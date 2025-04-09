@@ -1,0 +1,45 @@
+Sub CropTopHalf_PowerPoint()
+    Dim shp As Shape
+    Dim cropAmount As Single
+
+    ' Make sure a shape is selected
+    If ActiveWindow.Selection.Type <> ppSelectionShapes Then
+        MsgBox "Please select a picture."
+        Exit Sub
+    End If
+
+    Set shp = ActiveWindow.Selection.ShapeRange(1)
+
+    ' Check if the shape is a picture
+    If shp.Type <> msoPicture And shp.Type <> msoLinkedPicture Then
+        MsgBox "The selected shape is not a picture."
+        Exit Sub
+    End If
+
+    ' Crop the bottom half
+    cropAmount = shp.Height / 2
+    shp.PictureFormat.CropBottom = cropAmount
+End Sub
+Sub CropBottomHalf_PowerPoint()
+    Dim shp As Shape
+    Dim cropAmount As Single
+
+    ' Ensure a shape is selected
+    If ActiveWindow.Selection.Type <> ppSelectionShapes Then
+        MsgBox "Please select a picture."
+        Exit Sub
+    End If
+
+    Set shp = ActiveWindow.Selection.ShapeRange(1)
+
+    ' Ensure it's a picture
+    If shp.Type <> msoPicture And shp.Type <> msoLinkedPicture Then
+        MsgBox "The selected shape is not a picture."
+        Exit Sub
+    End If
+
+    ' Crop top half to keep only the bottom half
+    cropAmount = shp.Height / 2
+    shp.PictureFormat.CropTop = cropAmount
+End Sub
+
