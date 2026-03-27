@@ -100,8 +100,8 @@ def process_multiple_gid_files(directory_path, output_excel_path=None, delimiter
 
 # Example usage:
 if __name__ == "__main__":
-    # Read config from info.f file
-    info_file = 'info.f'
+    # Read config from info.f file in the same directory as this script
+    info_file = os.path.join(os.path.dirname(__file__), 'info.f')
     if not os.path.exists(info_file):
         print(f"info.f file not found. Please create {info_file} with required fields")
         exit(1)
