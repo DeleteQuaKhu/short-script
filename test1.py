@@ -2,7 +2,50 @@ import pandas as pd
 import os
 from pathlib import Path
 
-def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_merge=True, start_line=26, column_indices=[1,2]):
+def read_gid_data(gid_file_path, delimiter=' ', start_line=26, column_indices=[1,2]):
+    """
+    Read data from .gid file without writing to Excel.
+    """
+    skip_rows = max(0, start_line - 1)
+
+    try:
+        df = pd.read_csv(
+            gid_file_path,
+            sep='\s+',
+            engine='python',
+            skiprows=skip_rows,
+            header=None,
+            comment='!',
+            on_bad_lines='skip',
+            skip_blank_lines=True,
+        )
+    except Exception as e:
+        print(f"Warning: primary read_csv failed for {gid_file_path}: {e}")
+        df = pd.read_csv(
+            gid_file_path,
+            delimiter=delimiter,
+            engine='python',
+            skiprows=skip_rows,
+            header=None,
+            skipinitialspace=True,
+            comment='!',
+            on_bad_lines='skip',
+            skip_blank_lines=True,
+        )
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # Extract specified columns
+    if df.shape[1] <= max(column_indices):
+        col_indices = [i for i in column_indices if i < df.shape[1]]
+    else:
+        col_indices = column_indices
+
+    result_df = df.iloc[:, col_indices].copy()
+    result_df.columns = ['col_' + str(i) for i in range(len(col_indices))]
+
+    return result_df
     """
     Extract data from .gid file (start_line to end) and write to Excel.
     
@@ -153,17 +196,27 @@ if __name__ == "__main__":
             value = value.strip().strip('"').strip("'")
             config[key] = value
 
-    GID_folder_path = config.get('GID_folder_path')
+    Excite_path = config.get('Excite_path')
+    case_set = config.get('case_set')
+    speed_value = config.get('speed')
+    list_gid = config.get('List_GID_file_name')
     excel_path = config.get('excel_path')
     start_line_value = config.get('START_LINE', '26')
-    list_gid = config.get('List_GID_file_name')
-    column_indices_value = config.get('COLUMN_INDICES', '[1,2]')
 
-    if not GID_folder_path or not excel_path or not list_gid:
-        print("info.f must include GID_folder_path, List_GID_file_name, and excel_path")
+    if not Excite_path or not case_set or not speed_value or not list_gid or not excel_path:
+        print("info.f must include Excite_path, case_set, speed, List_GID_file_name, and excel_path")
         exit(1)
 
-    # Parse list string to Python list
+    # Parse speed as list
+    try:
+        speed = eval(speed_value) if isinstance(speed_value, str) else speed_value
+        if not isinstance(speed, list):
+            speed = [speed]
+    except Exception:
+        print("speed must be a list of integers, e.g. [6000,7000]")
+        exit(1)
+
+    # Parse list_gid as list
     try:
         list_gid = eval(list_gid)
         if not isinstance(list_gid, list):
@@ -183,42 +236,61 @@ if __name__ == "__main__":
         print("START_LINE must be an integer or a list of integers, e.g. 26 or [26, 27]")
         exit(1)
 
-    # Parse COLUMN_INDICES as list or list of lists
-    try:
-        column_indices_parsed = eval(column_indices_value) if isinstance(column_indices_value, str) else column_indices_value
-        if isinstance(column_indices_parsed[0], list):
-            column_indices = [[int(x) for x in sublist] for sublist in column_indices_parsed]
-        else:
-            column_indices = [int(x) for x in column_indices_parsed]
-    except Exception:
-        print("COLUMN_INDICES must be a list of integers or list of lists, e.g. [1,2] or [[1,2], [6,7]]")
-        exit(1)
-
-    print(f"GID folder path: {GID_folder_path}")
+    print(f"Excite path: {Excite_path}")
+    print(f"Case set: {case_set}")
+    print(f"Speeds: {speed}")
     print(f"GID files: {list_gid}")
     print(f"Excel path: {excel_path}")
     print(f"Start line(s): {start_line}")
-    print(f"Column indices: {column_indices}")
 
-    # Process all listed GID files using START_LINE and COLUMN_INDICES
-    for i, gid_file in enumerate(list_gid):
-        gid_full_path = os.path.join(GID_folder_path, gid_file)
-        current_start_line = start_line[i] if isinstance(start_line, list) else start_line
-        current_column_indices = column_indices[i] if isinstance(column_indices, list) and isinstance(column_indices[0], list) else column_indices
+    # Process for each speed
+    data_dict = {}  # key: gid_file, value: dict of speed to df
 
-        try:
-            gid_to_excel(
-                gid_full_path,
-                excel_path,
-                delimiter=' ',
-                sheet_merge=True,
-                start_line=current_start_line,
-                column_indices=current_column_indices,
-            )
-        except Exception as e:
-            print(f"Error processing {gid_full_path}: {e}")
-            continue
+    for spd in speed:
+        folder_path = os.path.join(Excite_path, f"{case_set}.{spd}rpm", "results")
+        print(f"Processing speed {spd}rpm from {folder_path}")
 
-    print("gid_to_excel module loaded. Use functions:")
-    print("  - gid_to_excel(gid_file_path, output_excel, delimiter, sheet_merge)")
-    print("  - process_multiple_gid_files(directory, output_excel, delimiter, pattern)")
+        for i, gid_file in enumerate(list_gid):
+            gid_full_path = os.path.join(folder_path, gid_file)
+            current_start_line = start_line[i] if isinstance(start_line, list) else start_line
+
+            # Determine columns based on speed and file
+            if spd == 6000:
+                col_indices = [0, 2]  # columns 1 and 3 (0-indexed)
+            elif spd == 7000:
+                col_indices = [2]  # column 3
+            else:
+                col_indices = [0, 2]
+
+            try:
+                df = read_gid_data(gid_full_path, delimiter=' ', start_line=current_start_line, column_indices=col_indices)
+                if gid_file not in data_dict:
+                    data_dict[gid_file] = {}
+                data_dict[gid_file][spd] = df
+                print(f"Loaded {gid_file} for {spd}rpm: {len(df)} rows")
+            except Exception as e:
+                print(f"Error processing {gid_full_path}: {e}")
+                continue
+
+    # Now write to Excel
+    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+        for gid_file, speed_data in data_dict.items():
+            sheet_name = Path(gid_file).stem
+            combined_df = pd.DataFrame()
+
+            if 6000 in speed_data:
+                df_6000 = speed_data[6000]
+                if len(df_6000.columns) > 0:
+                    combined_df['crank_angle'] = df_6000.iloc[:, 0]
+                if len(df_6000.columns) > 1:
+                    combined_df['result_6000'] = df_6000.iloc[:, 1]
+
+            if 7000 in speed_data:
+                df_7000 = speed_data[7000]
+                if len(df_7000.columns) > 0:
+                    combined_df['result_7000'] = df_7000.iloc[:, 0]
+
+            combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
+            print(f"Written {sheet_name} to {excel_path}")
+
+    print("Processing complete.")
