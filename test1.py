@@ -65,9 +65,15 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
             skip_blank_lines=True,
         )
     
-    # Extract columns 2 and 3 (0-indexed: columns 2 and 3)
-    result_df = df.iloc[:, [1, 2]].copy()
-    result_df.columns = ['crank_angle', 'result']
+    # Extract columns 2 and 3 (0-indexed: columns 1 and 2)
+    if df.shape[1] < 3:
+        print(f"Warning: {gid_file_path} has only {df.shape[1]} columns, expected at least 3. Using available columns.")
+        col_indices = list(range(min(2, df.shape[1])))
+    else:
+        col_indices = [1, 2]
+    
+    result_df = df.iloc[:, col_indices].copy()
+    result_df.columns = ['crank_angle', 'result'][:len(col_indices)]
     
     # Include all rows starting from line 26
     
