@@ -104,8 +104,8 @@ if __name__ == "__main__":
         with open(info_file, 'r') as f:
             lines = f.readlines()
             if len(lines) >= 2:
-                GID_file_path = lines[0].strip()
-                excel_path = lines[1].strip()
+                GID_file_path = lines[0].strip().strip('"').strip("'")
+                excel_path = lines[1].strip().strip('"').strip("'")
                 print(f"GID file path: {GID_file_path}")
                 print(f"Excel path: {excel_path}")
             else:
