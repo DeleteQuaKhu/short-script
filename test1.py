@@ -2,9 +2,9 @@ import pandas as pd
 import os
 from pathlib import Path
 
-def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_merge=True):
+def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_merge=True, start_line=26):
     """
-    Extract data from .gid file (line 26 to end) and write to Excel.
+    Extract data from .gid file (start_line to end) and write to Excel.
     
     Parameters:
     -----------
@@ -16,6 +16,8 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
         Delimiter used in .gid file (default: space)
     sheet_merge : bool, optional
         If True, append to existing sheet; if False, create/overwrite (default: True)
+    start_line : int, optional
+        Starting line (1-indexed) to read from GID file (default: 26)
     
     Returns:
     --------
@@ -33,12 +35,12 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
     
     output_excel_path = Path(output_excel_path)
     
-    # Read .gid file starting from line 26 (0-indexed: line 25)
-    # Skip first 25 lines, then read
+    # Read .gid file starting from provided line
+    # skiprows is 0-indexed, so skip (start_line - 1) lines
     df = pd.read_csv(
         gid_file_path,
         delimiter=delimiter,
-        skiprows=25,  # Skip first 25 lines (0-24), start from line 26
+        skiprows=max(0, start_line - 1),
         header=None,
         skipinitialspace=True
     )
@@ -119,7 +121,7 @@ if __name__ == "__main__":
 
     GID_folder_path = config.get('GID_folder_path')
     excel_path = config.get('excel_path')
-    start_line = int(config.get('START_LINE', '26'))
+    start_line_value = config.get('START_LINE', '26')
     list_gid = config.get('List_GID_file_name')
 
     if not GID_folder_path or not excel_path or not list_gid:
@@ -135,20 +137,34 @@ if __name__ == "__main__":
         print("List_GID_file_name must be a Python list string, e.g. [\"PTOT.GID\", \"PASP.GID\"]")
         exit(1)
 
+    # Parse START_LINE as int or list
+    try:
+        start_line_parsed = eval(start_line_value) if isinstance(start_line_value, str) else start_line_value
+        if isinstance(start_line_parsed, list):
+            start_line = [int(x) for x in start_line_parsed]
+        else:
+            start_line = int(start_line_parsed)
+    except Exception:
+        print("START_LINE must be an integer or a list of integers, e.g. 26 or [26, 27]")
+        exit(1)
+
     print(f"GID folder path: {GID_folder_path}")
     print(f"GID files: {list_gid}")
     print(f"Excel path: {excel_path}")
-    print(f"Start line: {start_line}")
+    print(f"Start line(s): {start_line}")
 
     # Process all listed GID files using START_LINE
-    for gid_file in list_gid:
+    for i, gid_file in enumerate(list_gid):
         gid_full_path = os.path.join(GID_folder_path, gid_file)
+        current_start_line = start_line[i] if isinstance(start_line, list) else start_line
+
         try:
             gid_to_excel(
                 gid_full_path,
                 excel_path,
                 delimiter=' ',
                 sheet_merge=True,
+                start_line=current_start_line,
             )
         except Exception as e:
             print(f"Error processing {gid_full_path}: {e}")
