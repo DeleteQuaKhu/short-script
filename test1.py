@@ -1,1 +1,1 @@
-print("hel.py")
+print(".py")
