@@ -106,10 +106,9 @@ if __name__ == "__main__":
             lines = f.readlines()
             if len(lines) >= 2:
                 GID_folder_path = lines[0].strip()
-                excel_path = lines[1].strip()                print(f"GID folder path: {GID_folder_path}")
-                print(f"Excel path: {excel_path}")            else:
-                print("info.f must contain at least 2 lines: GID folder path and Excel path")
-                exit(1)
+                excel_path = lines[1].strip() # Optional: You can add a default path if excel_path is empty
+            else:
+                exit(1) 
     else:
         print(f"info.f file not found. Please create {info_file} with GID folder path on line 1 and Excel path on line 2.")
         exit(1)
