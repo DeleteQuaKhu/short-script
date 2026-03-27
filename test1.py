@@ -98,33 +98,62 @@ def process_multiple_gid_files(directory_path, output_excel_path=None, delimiter
 
 # Example usage:
 if __name__ == "__main__":
-    # Read paths from info.f file
+    # Read config from info.f file
     info_file = 'info.f'
-    if os.path.exists(info_file):
-        with open(info_file, 'r') as f:
-            lines = f.readlines()
-            if len(lines) >= 2:
-                GID_file_path = lines[0].strip().strip('"').strip("'")
-                excel_path = lines[1].strip().strip('"').strip("'")
-                print(f"GID file path: {GID_file_path}")
-                print(f"Excel path: {excel_path}")
-            else:
-                print("info.f must contain at least 2 lines: GID file path on line 1 and Excel path on line 2")
-                exit(1)
-    else:
-        print(f"info.f file not found. Please create {info_file} with GID file path on line 1 and Excel path on line 2.")
+    if not os.path.exists(info_file):
+        print(f"info.f file not found. Please create {info_file} with required fields")
         exit(1)
-    
-    # Single file example:
+
+    config = {}
+    with open(info_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if ':' not in line:
+                continue
+            key, value = line.split(':', 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            config[key] = value
+
+    GID_folder_path = config.get('GID_folder_path')
+    excel_path = config.get('excel_path')
+    start_line = int(config.get('START_LINE', '26'))
+    list_gid = config.get('List_GID_file_name')
+
+    if not GID_folder_path or not excel_path or not list_gid:
+        print("info.f must include GID_folder_path, List_GID_file_name, and excel_path")
+        exit(1)
+
+    # Parse list string to Python list
     try:
-        gid_to_excel(GID_file_path, excel_path, delimiter=' ')
-    except Exception as e:
-        print(f"Error processing GID file: {e}")
+        list_gid = eval(list_gid)
+        if not isinstance(list_gid, list):
+            raise ValueError
+    except Exception:
+        print("List_GID_file_name must be a Python list string, e.g. [\"PTOT.GID\", \"PASP.GID\"]")
         exit(1)
-    
-    # Multiple files example:
-    # process_multiple_gid_files('path/to/gid/folder', 'combined_output.xlsx', delimiter=' ')
-    
+
+    print(f"GID folder path: {GID_folder_path}")
+    print(f"GID files: {list_gid}")
+    print(f"Excel path: {excel_path}")
+    print(f"Start line: {start_line}")
+
+    # Process all listed GID files using START_LINE
+    for gid_file in list_gid:
+        gid_full_path = os.path.join(GID_folder_path, gid_file)
+        try:
+            gid_to_excel(
+                gid_full_path,
+                excel_path,
+                delimiter=' ',
+                sheet_merge=True,
+            )
+        except Exception as e:
+            print(f"Error processing {gid_full_path}: {e}")
+            continue
+
     print("gid_to_excel module loaded. Use functions:")
     print("  - gid_to_excel(gid_file_path, output_excel, delimiter, sheet_merge)")
     print("  - process_multiple_gid_files(directory, output_excel, delimiter, pattern)")
