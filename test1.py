@@ -1,1 +1,1 @@
-print("test123  456")
+print("test")
