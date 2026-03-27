@@ -33,18 +33,18 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
     
     output_excel_path = Path(output_excel_path)
     
-    # Read .gid file starting from line 41 (0-indexed: line 40)
-    # Skip first 40 lines, then read
+    # Read .gid file starting from line 26 (0-indexed: line 25)
+    # Skip first 25 lines, then read
     df = pd.read_csv(
         gid_file_path,
         delimiter=delimiter,
-        skiprows=40,  # Skip first 40 lines (0-39), start from line 41
+        skiprows=25,  # Skip first 25 lines (0-24), start from line 26
         header=None,
         skipinitialspace=True
     )
     
-    # Extract columns 1 and 3 (0-indexed: columns 0 and 2)
-    result_df = df.iloc[:, [0, 2]].copy()
+    # Extract columns 2 and 3 (0-indexed: columns 2 and 3)
+    result_df = df.iloc[:, [2, 3]].copy()
     result_df.columns = ['crank_angle', 'result']
     
     # Add index as folder name
