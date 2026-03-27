@@ -116,7 +116,11 @@ if __name__ == "__main__":
         exit(1)
     
     # Single file example:
-    gid_to_excel(GID_file_path, excel_path, delimiter=' ')
+    try:
+        gid_to_excel(GID_file_path, excel_path, delimiter=' ')
+    except Exception as e:
+        print(f"Error processing GID file: {e}")
+        exit(1)
     
     # Multiple files example:
     # process_multiple_gid_files('path/to/gid/folder', 'combined_output.xlsx', delimiter=' ')
