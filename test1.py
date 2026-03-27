@@ -100,7 +100,7 @@ def process_multiple_gid_files(directory_path, output_excel_path=None, delimiter
 # Example usage:
 if __name__ == "__main__":
     # Single file example:
-    GID_folder_path = r"path/to/gid/folder"
+    GID_folder_path = r"path/to/file.GID"
     excel_path = r"output.xlsx"
     gid_to_excel(GID_folder_path, excel_path, delimiter=' ')
     
