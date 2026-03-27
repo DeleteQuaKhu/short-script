@@ -44,21 +44,21 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
     )
     
     # Extract columns 2 and 3 (0-indexed: columns 2 and 3)
-    result_df = df.iloc[:, [2, 3]].copy()
+    result_df = df.iloc[:, [1, 2]].copy()
     result_df.columns = ['crank_angle', 'result']
     
-    # Add index as folder name
-    result_df.insert(0, 'index', folder_name)
+    # Skip first row
+    result_df = result_df[1:]
     
     # Write to Excel
     if sheet_merge and output_excel_path.exists():
         # Append to existing file with new sheet
         with pd.ExcelWriter(output_excel_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-            result_df.to_excel(writer, sheet_name=gid_name, index=False)
+            result_df.to_excel(writer, sheet_name=gid_name, index=False, header=False)
     else:
         # Create new Excel file
         with pd.ExcelWriter(output_excel_path, engine='openpyxl') as writer:
-            result_df.to_excel(writer, sheet_name=gid_name, index=False)
+            result_df.to_excel(writer, sheet_name=gid_name, index=False, header=False)
     
     print(f"✓ Written to {output_excel_path} | Sheet: {gid_name} | Rows: {len(result_df)}")
     
@@ -100,9 +100,10 @@ def process_multiple_gid_files(directory_path, output_excel_path=None, delimiter
 # Example usage:
 if __name__ == "__main__":
     # Single file example:
-    GID_file = r"path/to/file.GID"
+    GID_folder_path = r"path/to/gid/folder"
+    GIF_file= os.path.join(GID_folder_path, "BigEnd1-PTOT.GID")
     excel_path = r"output.xlsx"
-    gid_to_excel(GID_file, excel_path, delimiter=' ')
+    gid_to_excel(GIF_file, excel_path, delimiter=' ')
     
     # Multiple files example:
     # process_multiple_gid_files('path/to/gid/folder', 'combined_output.xlsx', delimiter=' ')
