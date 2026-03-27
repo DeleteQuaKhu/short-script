@@ -47,8 +47,7 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
     result_df = df.iloc[:, [1, 2]].copy()
     result_df.columns = ['crank_angle', 'result']
     
-    # Skip first row
-    result_df = result_df[1:]
+    # Include all rows starting from line 26
     
     # Write to Excel
     if sheet_merge and output_excel_path.exists():
@@ -99,10 +98,25 @@ def process_multiple_gid_files(directory_path, output_excel_path=None, delimiter
 
 # Example usage:
 if __name__ == "__main__":
+    # Read paths from info.f file
+    info_file = 'info.f'
+    if os.path.exists(info_file):
+        with open(info_file, 'r') as f:
+            lines = f.readlines()
+            if len(lines) >= 2:
+                GID_file_path = lines[0].strip()
+                excel_path = lines[1].strip()
+                print(f"GID file path: {GID_file_path}")
+                print(f"Excel path: {excel_path}")
+            else:
+                print("info.f must contain at least 2 lines: GID file path on line 1 and Excel path on line 2")
+                exit(1)
+    else:
+        print(f"info.f file not found. Please create {info_file} with GID file path on line 1 and Excel path on line 2.")
+        exit(1)
+    
     # Single file example:
-    GID_folder_path = r"path/to/file.GID"
-    excel_path = r"output.xlsx"
-    gid_to_excel(GID_folder_path, excel_path, delimiter=' ')
+    gid_to_excel(GID_file_path, excel_path, delimiter=' ')
     
     # Multiple files example:
     # process_multiple_gid_files('path/to/gid/folder', 'combined_output.xlsx', delimiter=' ')
