@@ -278,17 +278,21 @@ if __name__ == "__main__":
             sheet_name = Path(gid_file).stem
             combined_df = pd.DataFrame()
 
-            if 6000 in speed_data:
-                df_6000 = speed_data[6000]
-                if len(df_6000.columns) > 0:
-                    combined_df['crank_angle'] = df_6000.iloc[:, 0]
-                if len(df_6000.columns) > 1:
-                    combined_df['result_6000'] = df_6000.iloc[:, 1]
+            # Sort speeds to ensure consistent order
+            sorted_speeds = sorted(speed_data.keys())
 
-            if 7000 in speed_data:
-                df_7000 = speed_data[7000]
-                if len(df_7000.columns) > 0:
-                    combined_df['result_7000'] = df_7000.iloc[:, 0]
+            for idx, spd in enumerate(sorted_speeds):
+                df_spd = speed_data[spd]
+                if idx == 0:  # First speed provides crank_angle
+                    if len(df_spd.columns) > 0:
+                        combined_df['crank_angle'] = df_spd.iloc[:, 0]
+                    if len(df_spd.columns) > 1:
+                        combined_df[f'result_{spd}'] = df_spd.iloc[:, 1]
+                    else:
+                        combined_df[f'result_{spd}'] = df_spd.iloc[:, 0]
+                else:  # Subsequent speeds only provide result
+                    if len(df_spd.columns) > 0:
+                        combined_df[f'result_{spd}'] = df_spd.iloc[:, 0]
 
             combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
             print(f"Written {sheet_name} to {excel_path}")
