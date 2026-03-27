@@ -2,7 +2,7 @@ import pandas as pd
 import os
 from pathlib import Path
 
-def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_merge=True, start_line=26):
+def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_merge=True, start_line=26, column_indices=[1,2]):
     """
     Extract data from .gid file (start_line to end) and write to Excel.
     
@@ -66,16 +66,19 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
         )
 
     print(f"Debug: {gid_file_path} - start_line {start_line}, skip_rows {skip_rows}, df.shape {df.shape}")
+    if not df.empty:
+        print(f"Debug: First 3 rows of {gid_file_path}:")
+        print(df.head(3))
     if df.empty:
         print(f"Warning: {gid_file_path} resulted in empty DataFrame after reading")
         return pd.DataFrame(columns=['crank_angle', 'result'])
     
-    # Extract columns 2 and 3 (0-indexed: columns 1 and 2)
-    if df.shape[1] < 3:
-        print(f"Warning: {gid_file_path} has only {df.shape[1]} columns, expected at least 3. Using available columns.")
-        col_indices = list(range(min(2, df.shape[1])))
+    # Extract specified columns
+    if df.shape[1] <= max(column_indices):
+        print(f"Warning: {gid_file_path} has only {df.shape[1]} columns, requested max index {max(column_indices)}. Using available columns.")
+        col_indices = [i for i in column_indices if i < df.shape[1]]
     else:
-        col_indices = [1, 2]
+        col_indices = column_indices
     
     result_df = df.iloc[:, col_indices].copy()
     result_df.columns = ['crank_angle', 'result'][:len(col_indices)]
@@ -154,6 +157,7 @@ if __name__ == "__main__":
     excel_path = config.get('excel_path')
     start_line_value = config.get('START_LINE', '26')
     list_gid = config.get('List_GID_file_name')
+    column_indices_value = config.get('COLUMN_INDICES', '[1,2]')
 
     if not GID_folder_path or not excel_path or not list_gid:
         print("info.f must include GID_folder_path, List_GID_file_name, and excel_path")
@@ -183,11 +187,13 @@ if __name__ == "__main__":
     print(f"GID files: {list_gid}")
     print(f"Excel path: {excel_path}")
     print(f"Start line(s): {start_line}")
+    print(f"Column indices: {column_indices}")
 
-    # Process all listed GID files using START_LINE
+    # Process all listed GID files using START_LINE and COLUMN_INDICES
     for i, gid_file in enumerate(list_gid):
         gid_full_path = os.path.join(GID_folder_path, gid_file)
         current_start_line = start_line[i] if isinstance(start_line, list) else start_line
+        current_column_indices = column_indices[i] if isinstance(column_indices, list) and isinstance(column_indices[0], list) else column_indices
 
         try:
             gid_to_excel(
@@ -196,6 +202,7 @@ if __name__ == "__main__":
                 delimiter=' ',
                 sheet_merge=True,
                 start_line=current_start_line,
+                column_indices=current_column_indices,
             )
         except Exception as e:
             print(f"Error processing {gid_full_path}: {e}")
