@@ -183,6 +183,17 @@ if __name__ == "__main__":
         print("START_LINE must be an integer or a list of integers, e.g. 26 or [26, 27]")
         exit(1)
 
+    # Parse COLUMN_INDICES as list or list of lists
+    try:
+        column_indices_parsed = eval(column_indices_value) if isinstance(column_indices_value, str) else column_indices_value
+        if isinstance(column_indices_parsed[0], list):
+            column_indices = [[int(x) for x in sublist] for sublist in column_indices_parsed]
+        else:
+            column_indices = [int(x) for x in column_indices_parsed]
+    except Exception:
+        print("COLUMN_INDICES must be a list of integers or list of lists, e.g. [1,2] or [[1,2], [6,7]]")
+        exit(1)
+
     print(f"GID folder path: {GID_folder_path}")
     print(f"GID files: {list_gid}")
     print(f"Excel path: {excel_path}")
