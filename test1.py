@@ -254,13 +254,11 @@ if __name__ == "__main__":
             gid_full_path = os.path.join(folder_path, gid_file)
             current_start_line = start_line[i] if isinstance(start_line, list) else start_line
 
-            # Determine columns based on speed and file
-            if spd == 6000:
-                col_indices = [0, 2]  # columns 1 and 3 (0-indexed)
-            elif spd == 7000:
+            # Determine columns based on speed order
+            if spd == speed[0]:  # First speed provides crank_angle and result
+                col_indices = [1, 2]  # columns 2 and 3 (0-indexed)
+            else:  # Subsequent speeds only provide result
                 col_indices = [2]  # column 3
-            else:
-                col_indices = [0, 2]
 
             try:
                 df = read_gid_data(gid_full_path, delimiter=' ', start_line=current_start_line, column_indices=col_indices)
