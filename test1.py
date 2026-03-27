@@ -37,13 +37,33 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
     
     # Read .gid file starting from provided line
     # skiprows is 0-indexed, so skip (start_line - 1) lines
-    df = pd.read_csv(
-        gid_file_path,
-        delimiter=delimiter,
-        skiprows=max(0, start_line - 1),
-        header=None,
-        skipinitialspace=True
-    )
+    skip_rows = max(0, start_line - 1)
+
+    try:
+        df = pd.read_csv(
+            gid_file_path,
+            sep='\s+',
+            engine='python',
+            skiprows=skip_rows,
+            header=None,
+            comment='!',
+            on_bad_lines='skip',
+            skip_blank_lines=True,
+        )
+    except Exception as e:
+        print(f"Warning: primary read_csv failed for {gid_file_path}: {e}")
+        print("Retrying with fallback settings")
+        df = pd.read_csv(
+            gid_file_path,
+            delimiter=delimiter,
+            engine='python',
+            skiprows=skip_rows,
+            header=None,
+            skipinitialspace=True,
+            comment='!',
+            on_bad_lines='skip',
+            skip_blank_lines=True,
+        )
     
     # Extract columns 2 and 3 (0-indexed: columns 2 and 3)
     result_df = df.iloc[:, [1, 2]].copy()
