@@ -64,6 +64,11 @@ def gid_to_excel(gid_file_path, output_excel_path=None, delimiter=' ', sheet_mer
             on_bad_lines='skip',
             skip_blank_lines=True,
         )
+
+    print(f"Debug: {gid_file_path} - start_line {start_line}, skip_rows {skip_rows}, df.shape {df.shape}")
+    if df.empty:
+        print(f"Warning: {gid_file_path} resulted in empty DataFrame after reading")
+        return pd.DataFrame(columns=['crank_angle', 'result'])
     
     # Extract columns 2 and 3 (0-indexed: columns 1 and 2)
     if df.shape[1] < 3:
