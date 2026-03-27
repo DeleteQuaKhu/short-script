@@ -99,23 +99,10 @@ def process_multiple_gid_files(directory_path, output_excel_path=None, delimiter
 
 # Example usage:
 if __name__ == "__main__":
-    # Read paths from info.f file
-    info_file = 'info.f'
-    if os.path.exists(info_file):
-        with open(info_file, 'r') as f:
-            lines = f.readlines()
-            if len(lines) >= 2:
-                GID_folder_path = lines[0].strip()
-                excel_path = lines[1].strip() # Optional: You can add a default path if excel_path is empty
-            else:
-                exit(1) 
-    else:
-        print(f"info.f file not found. Please create {info_file} with GID folder path on line 1 and Excel path on line 2.")
-        exit(1)
-    
     # Single file example:
-    GIF_file = os.path.join(GID_folder_path, "BigEnd1-PTOT.GID")
-    gid_to_excel(GIF_file, excel_path, delimiter=' ')
+    GID_folder_path = r"path/to/gid/folder"
+    excel_path = r"output.xlsx"
+    gid_to_excel(GID_folder_path, excel_path, delimiter=' ')
     
     # Multiple files example:
     # process_multiple_gid_files('path/to/gid/folder', 'combined_output.xlsx', delimiter=' ')
