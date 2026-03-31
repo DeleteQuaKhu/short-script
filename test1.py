@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import re
 from pathlib import Path
 
 def read_gid_data(gid_file_path, delimiter=' ', start_line=26, column_indices=[1,2]):
@@ -132,13 +133,13 @@ def read_gid_data(gid_file_path, delimiter=' ', start_line=26, column_indices=[1
     if sheet_merge and output_excel_path.exists():
         # Append to existing file with new sheet
         with pd.ExcelWriter(output_excel_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-            result_df.to_excel(writer, sheet_name=gid_name[8:-5], index=False, header=False)
+            result_df.to_excel(writer, sheet_name=re.split(r'[-_]', gid_name)[-1], index=False, header=False)
     else:
         # Create new Excel file
         with pd.ExcelWriter(output_excel_path, engine='openpyxl') as writer:
-            result_df.to_excel(writer, sheet_name=gid_name[8:-5], index=False, header=False)
+            result_df.to_excel(writer, sheet_name=re.split(r'[-_]', gid_name)[-1], index=False, header=False)
     
-    print(f"✓ Written to {output_excel_path} | Sheet: {gid_name[8:-5]} | Rows: {len(result_df)}")
+    print(f"✓ Written to {output_excel_path} | Sheet: {re.split(r'[-_]', gid_name)[-1]} | Rows: {len(result_df)}")
     
     return result_df
 
@@ -273,7 +274,7 @@ if __name__ == "__main__":
     # Now write to Excel
     with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
         for gid_file, speed_data in data_dict.items():
-            sheet_name = Path(gid_file).stem
+            sheet_name = re.split(r'[-_]', Path(gid_file).stem)[-1]
             combined_df = pd.DataFrame()
 
             # Sort speeds to ensure consistent order
