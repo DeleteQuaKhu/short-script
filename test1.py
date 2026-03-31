@@ -132,13 +132,13 @@ def read_gid_data(gid_file_path, delimiter=' ', start_line=26, column_indices=[1
     if sheet_merge and output_excel_path.exists():
         # Append to existing file with new sheet
         with pd.ExcelWriter(output_excel_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-            result_df.to_excel(writer, sheet_name=gid_name, index=False, header=False)
+            result_df.to_excel(writer, sheet_name=gid_name[8:-5], index=False, header=False)
     else:
         # Create new Excel file
         with pd.ExcelWriter(output_excel_path, engine='openpyxl') as writer:
             result_df.to_excel(writer, sheet_name=gid_name, index=False, header=False)
     
-    print(f"✓ Written to {output_excel_path} | Sheet: {gid_name} | Rows: {len(result_df)}")
+    print(f"✓ Written to {output_excel_path} | Sheet: {gid_name[8:-5]} | Rows: {len(result_df)}")
     
     return result_df
 
