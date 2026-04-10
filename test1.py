@@ -277,25 +277,20 @@ if __name__ == "__main__":
             sheet_name = re.split(r'[-_]', Path(gid_file).stem)[-1]
             combined_df = pd.DataFrame()
 
-            # Sort speeds to ensure consistent order
-            sorted_speeds = sorted(speed_data.keys())
-
-            # Get crank_angle from the first speed in the original config (speed[0])
-            first_speed = speed[0]
-            if first_speed in speed_data:
-                df_first = speed_data[first_speed]
-                if len(df_first.columns) > 0:
-                    combined_df['crank_angle'] = df_first.iloc[:, 0]
-
-            # Add results for all speeds
-            for spd in sorted_speeds:
+            # Use the speed order from config
+            for idx, spd in enumerate(speed):
+                if spd not in speed_data:
+                    continue
                 df_spd = speed_data[spd]
-                if len(df_spd.columns) > 0:
-                    if spd == first_speed and len(df_spd.columns) > 1:
-                        # For first speed, result is second column
+                if idx == 0:  # First speed provides crank_angle and result
+                    if len(df_spd.columns) > 0:
+                        combined_df['crank_angle'] = df_spd.iloc[:, 0]
+                    if len(df_spd.columns) > 1:
                         combined_df[f'result_{spd}'] = df_spd.iloc[:, 1]
                     else:
-                        # For others, result is first (and only) column
+                        combined_df[f'result_{spd}'] = df_spd.iloc[:, 0]
+                else:  # Subsequent speeds only provide result
+                    if len(df_spd.columns) > 0:
                         combined_df[f'result_{spd}'] = df_spd.iloc[:, 0]
 
             combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
