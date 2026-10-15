@@ -30,7 +30,16 @@
 #    3. THE BUILT-IN 'hwi' TCL COMMAND - renamed and wrapped (V3).  Every
 #       'hwi ...' call from a script or from the console is logged too, and it
 #       is still evaluated in the CALLER's frame, so handles created by e.g.
-#       'hwi GetSessionHandle sess' stay visible to the caller as before.
+#       'hwi GetSessionHandle sess' stay visible to the caller as before.  The
+#       noise filter below applies to these calls as well, so a background
+#       script that only opens a stack to fetch a handle cannot flood the log.
+#
+#  NOISE (only the display and the script are filtered, the raw mirror keeps
+#  every line; the 'Hide noise lines' box switches the filter off)
+#    * blank lines, '*begin' / '*end', '*commandfile...', '*codestart' / '*codeend'
+#    * the empty stack dance a background job can repeat without end:
+#      'hwi OpenStack' / 'hwi GetSessionHandle <name>' / 'hwi CloseStack'.
+#      Only that exact shape counts - one word more is a real command again.
 #
 #  LAYERS (single file, clearly separated - same layout as hv_model_loader.tcl)
 #     SECTION 0  BOOTSTRAP         - what this interpreter offers (hwtk? hwi?)
@@ -68,7 +77,10 @@
 #         with the file / 'hwi' taps alone.
 #     V3  'rename ::hwi ::HvCmdLog::hwiReal' + a 'proc hwi'.  Standard Tcl; if
 #         a build refuses the rename the tap is skipped ('not available') and
-#         nothing else changes.  'Stop' puts the original command back.
+#         nothing else changes.  'Stop' puts the original command back.  A line
+#         caught by the tap runs through the noise filter of Logic, so the
+#         stack dance of a background script stays out of the log - the
+#         .raw.cmf mirror keeps it for the audit.
 #     V4  real-time appending: the file is polled (default 400 ms).  A build
 #         that buffers the command file shows the lines later - lower the poll
 #         interval, or save the session (both is safe, the offset prevents
@@ -287,10 +299,22 @@ namespace eval ::HvCmdLog::Logic {
     variable envKeys {cwd temp tmp home profile}
     # V1 - VERIFY: markers a command file may carry around the real commands.
     #     They are not commands and would only pollute the log and a replay.
+    # V3 - VERIFY: the empty stack dance.  A background script - or HyperView
+    #     itself - can open a stack, fetch a session handle and close the stack
+    #     again in a tight loop, which is thousands of lines of pure noise in
+    #     the window (the handle counts down, so the loop is fast):
+    #         hwi OpenStack / hwi GetSessionHandle shndlehw-9978045 / hwi CloseStack
+    #     Only the EXACT shape counts as noise: one argument more ('hwi OpenStack
+    #     sess', 'hwi GetSessionHandle sess extra') is a real command again and
+    #     is kept, and everything a user does between the three lines is kept as
+    #     well - the filter only drops these three lines themselves.
     variable noisePatterns {
         {^\*(begin|end)(\s|$)}
         {^\*commandfile\w*}
         {^\*(codestart|codeend)(\s|$)}
+        {^hwi\s+OpenStack\s*$}
+        {^hwi\s+CloseStack\s*$}
+        {^hwi\s+GetSessionHandle\s+\S+\s*$}
     }
     # The script that is written while recording.
     variable scriptPrefix hv_cmdlog
@@ -422,8 +446,13 @@ proc ::HvCmdLog::Logic::TruncateMarker {} {
 }
 #--------------------------------------------- noise filter -------------------
 # V1 - VERIFY: a line that is not a command (blank, a *begin / *end marker, a
-#     '*commandfile...' switch).  Only the DISPLAY and the script are filtered,
-#     the raw mirror keeps everything.
+#     '*commandfile...' switch).
+# V3 - VERIFY: the empty stack dance of a background script ('hwi OpenStack' /
+#     'hwi GetSessionHandle <name>' / 'hwi CloseStack') counts as noise as well:
+#     it holds no user action and can repeat without end.  Only the DISPLAY and
+#     the script are filtered, the raw mirror keeps everything - so the .cmf
+#     stays auditable and 'Hide noise lines' brings the lines back to the window
+#     when it is switched off.
 proc ::HvCmdLog::Logic::IsNoise {line} {
     set t [string trim $line]
     if {$t eq ""} { return 1 }
@@ -971,9 +1000,22 @@ proc ::HvCmdLog::Adapter::RemoveHwiTap {} {
 }
 # One logged hwi call.  The tool's own calls (inToolCall) are ignored, so the
 # probe and the housekeeping never appear in the log.
+# The noise filter of Logic applies here as well: without it a background script
+# that only opens a stack to fetch a handle would flood the window through the
+# tap, no matter what the pattern list says (V3).  A hidden line is counted as
+# hidden, and it is written to the .raw.cmf mirror when that mirror already
+# exists - a script that does nothing but open stacks must not create the files.
 proc ::HvCmdLog::Adapter::NoteHwiCall {args} {
     if {[::HvCmdLog::State::GetInToolCall]} { return }
     set line [::HvCmdLog::Logic::QuotedLine [linsert $args 0 hwi]]
+    if {[::HvCmdLog::Logic::IsNoise $line] && [::HvCmdLog::State::GetHideNoise]} {
+        ::HvCmdLog::State::AddCounts 1 1
+        if {[::HvCmdLog::State::GetWriteScript] && \
+                $::HvCmdLog::Adapter::scriptChan ne ""} {
+            ::HvCmdLog::Adapter::AppendToFiles [list $line] {}
+        }
+        return
+    }
     ::HvCmdLog::Emit $line
     ::HvCmdLog::State::AddLines [list $line]
     ::HvCmdLog::State::AddCounts 1 0
