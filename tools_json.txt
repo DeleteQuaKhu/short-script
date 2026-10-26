@@ -1,0 +1,40 @@
+[
+    {
+        "name":  "Calculator",
+        "group":  "Sys",
+        "path":  "calc.exe",
+        "hotkey":  "1",
+        "id":  "calculator"
+    },
+    {
+        "name":  "Clock",
+        "group":  "Sys",
+        "path":  "ms-clock:",
+        "hotkey":  "3",
+        "id":  "clock"
+    },
+    {
+        "name":  "Terminal",
+        "group":  "Dev",
+        "path":  "C:\\Users\\TechnoStar\\z.cmd",
+        "hotkey":  "t",
+        "id":  "terminal"
+    },
+    {
+        "name":  "VS Code",
+        "group":  "Dev",
+        "path":  "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe",
+        "args":  "--new-window .",
+        "cwd":  "%USERPROFILE%\\Projects",
+        "hotkey":  "c",
+        "id":  "vs-code"
+    },
+    {
+        "name":  "Regedit",
+        "group":  "Sys",
+        "path":  "regedit.exe",
+        "admin":  true,
+        "hotkey":  "r",
+        "id":  "regedit"
+    }
+]
