@@ -1,40 +1,8 @@
 [
-    {
-        "name":  "Calculator",
-        "group":  "Sys",
-        "path":  "calc.exe",
-        "hotkey":  "1",
-        "id":  "calculator"
-    },
-    {
-        "name":  "Clock",
-        "group":  "Sys",
-        "path":  "ms-clock:",
-        "hotkey":  "3",
-        "id":  "clock"
-    },
-    {
-        "name":  "Terminal",
-        "group":  "Dev",
-        "path":  "C:\\Users\\TechnoStar\\z.cmd",
-        "hotkey":  "t",
-        "id":  "terminal"
-    },
-    {
-        "name":  "VS Code",
-        "group":  "Dev",
-        "path":  "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe",
-        "args":  "--new-window .",
-        "cwd":  "%USERPROFILE%\\Projects",
-        "hotkey":  "c",
-        "id":  "vs-code"
-    },
-    {
-        "name":  "Regedit",
-        "group":  "Sys",
-        "path":  "regedit.exe",
-        "admin":  true,
-        "hotkey":  "r",
-        "id":  "regedit"
-    }
+  {"hotkey": "1", "name": "Calculator", "group": "Sys", "command": "Start-Process calc.exe"},
+  {"hotkey": "2", "name": "Clock", "group": "Sys", "command": "Start-Process ms-clock:"},
+  {"hotkey": "t", "name": "Terminal", "group": "Dev", "command": "Start-Process wt.exe"},
+  {"hotkey": "c", "name": "VS Code", "group": "Dev", "cwd": "%USERPROFILE%\\Projects", "command": "Start-Process \"$env:LOCALAPPDATA\\Programs\\Microsoft VS Code\\Code.exe\" -ArgumentList '--new-window','.'"},
+  {"hotkey": "r", "name": "Regedit", "group": "Sys", "command": "Start-Process regedit.exe", "admin": true},
+  {"hotkey": "p", "name": "Listening ports", "group": "Net", "console": true, "command": "Get-NetTCPConnection -State Listen | Sort-Object LocalPort | Format-Table LocalAddress,LocalPort,OwningProcess -AutoSize"}
 ]

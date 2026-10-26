@@ -3,6 +3,7 @@
   Tool Launcher (WinForms) - Windows PowerShell 5.1 / pwsh 7
   GUI : powershell -STA -File .\Launcher.ps1
   Run : .\Launcher.ps1 -Run <id|hotkey>     (headless, used by shortcuts / links)
+  tools.json fields: hotkey, name, group, command (PowerShell), cwd, admin, console
   Save this file as UTF-8 with BOM.
 #>
 param([string]$Run)
@@ -93,12 +94,12 @@ $utf8     = [Text.UTF8Encoding]::new($false)
 if (-not (Test-Path $cfg)) {
     [IO.File]::WriteAllText($cfg, @'
 [
-  { "hotkey": "1", "name": "Calculator", "group": "Sys", "path": "calc.exe" },
-  { "hotkey": "2", "name": "Clock",      "group": "Sys", "path": "ms-clock:" },
-  { "hotkey": "t", "name": "Terminal",   "group": "Dev", "path": "wt.exe" },
-  { "hotkey": "c", "name": "VS Code",    "group": "Dev", "path": "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe",
-    "args": "--new-window .", "cwd": "%USERPROFILE%\\Projects" },
-  { "hotkey": "r", "name": "Regedit",    "group": "Sys", "path": "regedit.exe", "admin": true }
+  {"hotkey": "1", "name": "Calculator", "group": "Sys", "command": "Start-Process calc.exe"},
+  {"hotkey": "2", "name": "Clock", "group": "Sys", "command": "Start-Process ms-clock:"},
+  {"hotkey": "t", "name": "Terminal", "group": "Dev", "command": "Start-Process wt.exe"},
+  {"hotkey": "c", "name": "VS Code", "group": "Dev", "cwd": "%USERPROFILE%\\Projects", "command": "Start-Process \"$env:LOCALAPPDATA\\Programs\\Microsoft VS Code\\Code.exe\" -ArgumentList '--new-window','.'"},
+  {"hotkey": "r", "name": "Regedit", "group": "Sys", "command": "Start-Process regedit.exe", "admin": true},
+  {"hotkey": "p", "name": "Listening ports", "group": "Net", "console": true, "command": "Get-NetTCPConnection -State Listen | Sort-Object LocalPort | Format-Table LocalAddress,LocalPort,OwningProcess -AutoSize"}
 ]
 '@, $utf8)
 }
@@ -113,11 +114,24 @@ function Set-Status([string]$msg, [bool]$isErr = $false) {
     }
 }
 
+function Convert-LegacyArg([string]$s) {
+    if ($s -notmatch '%\w+%') { return "'" + $s.Replace("'", "''") + "'" }
+    $e = $s.Replace('`', '``').Replace('"', '`"').Replace('$', '`$')
+    '"' + [regex]::Replace($e, '%(\w+)%', { param($m) '${env:' + $m.Groups[1].Value + '}' }) + '"'
+}
+
 function Import-Tools {
     $raw = Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json
     $ids = @{}
     $out = foreach ($t in @($raw | ForEach-Object { $_ })) {   # ForEach-Object { $_ }: PS 5.1 returns the whole array as one object
-        if (-not ($t.name -and $t.path)) { continue }
+        if (-not $t.name) { continue }
+        if (-not $t.command) {                      # migrate old path/args entries to a PowerShell command
+            if (-not $t.path) { continue }
+            $cmd = 'Start-Process -FilePath ' + (Convert-LegacyArg ([string]$t.path))
+            if ($t.args) { $cmd += ' -ArgumentList ' + (Convert-LegacyArg ([string]$t.args)) }
+            Add-Member -InputObject $t -NotePropertyName command -NotePropertyValue $cmd -Force
+            [void]$t.PSObject.Properties.Remove('path'); [void]$t.PSObject.Properties.Remove('args')
+        }
         $hk = if ($null -ne $t.hotkey) { "$($t.hotkey)".Trim().ToLower() } else { '' }
         Add-Member -InputObject $t -NotePropertyName hotkey -NotePropertyValue $hk -Force
         if ($null -eq $t.group) { Add-Member -InputObject $t -NotePropertyName group -NotePropertyValue '' -Force }
@@ -145,8 +159,12 @@ function Test-Dups {
 }
 
 function Start-Tool($t) {
-    $p = @{ FilePath = [Environment]::ExpandEnvironmentVariables([string]$t.path) }
-    if ($t.args)  { $p.ArgumentList     = [Environment]::ExpandEnvironmentVariables([string]$t.args) }
+    # the command runs in a separate PowerShell process (same edition as the launcher); -EncodedCommand avoids all quoting issues
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([string]$t.command))
+    $ps  = @('-NoProfile', '-ExecutionPolicy', 'Bypass')
+    if ($t.console) { $ps += '-NoExit' }               # keep the window open so output/errors stay visible
+    $ps += '-EncodedCommand', $enc
+    $p = @{ FilePath = (Get-Process -Id $PID).Path; ArgumentList = $ps; WindowStyle = $(if ($t.console) { 'Normal' } else { 'Hidden' }) }
     if ($t.cwd)   { $p.WorkingDirectory = [Environment]::ExpandEnvironmentVariables([string]$t.cwd) }
     if ($t.admin) { $p.Verb             = 'RunAs' }
     try {
@@ -378,7 +396,7 @@ $form.Add_Activated({ if ($Anim) { $timer.Start() } })
 # ============================== Settings dialog ==============================
 function Show-Settings {
     $dlg = New-Object Windows.Forms.Form -Property @{
-        Text = 'Settings - Hotkeys & Paths'; StartPosition = 'CenterParent'; FormBorderStyle = 'FixedDialog'
+        Text = 'Settings - Hotkeys & Commands'; StartPosition = 'CenterParent'; FormBorderStyle = 'FixedDialog'
         MinimizeBox = $false; MaximizeBox = $false; ShowInTaskbar = $false; KeyPreview = $true
         ClientSize = [Drawing.Size]::new(880, 360); BackColor = $C.Bg; ForeColor = $C.Accent; Font = $font
     }
@@ -396,7 +414,7 @@ function Show-Settings {
     $cs = $g.DefaultCellStyle
     $cs.BackColor = $C.Bg; $cs.ForeColor = $C.Accent; $cs.SelectionBackColor = $C.Sel; $cs.SelectionForeColor = $C.AccentHi
     [void]$g.Columns.Add('hk', 'Key'); [void]$g.Columns.Add('name', 'Name')
-    [void]$g.Columns.Add('grp', 'Group'); [void]$g.Columns.Add('path', 'Path')
+    [void]$g.Columns.Add('grp', 'Group'); [void]$g.Columns.Add('cmd', 'Command (PowerShell)')
     $w = 10, 25, 15, 50
     for ($i = 0; $i -lt 4; $i++) {
         $g.Columns[$i].FillWeight = $w[$i]
@@ -404,7 +422,7 @@ function Show-Settings {
     $g.Columns[0].DefaultCellStyle.Font = $fontBold
     $g.Columns[0].DefaultCellStyle.ForeColor = $C.AccentHi
     foreach ($t in $tools) {
-        $i = $g.Rows.Add([string]$t.hotkey, [string]$t.name, [string]$t.group, [string]$t.path)
+        $i = $g.Rows.Add([string]$t.hotkey, [string]$t.name, [string]$t.group, [string]$t.command)
         $g.Rows[$i].Tag = $t
     }
     $g.Add_HandleCreated({
@@ -423,7 +441,7 @@ function Show-Settings {
     # --- validate before the edit is committed ---
     $g.Add_CellValidating({
         param($s, $e)
-        $v = "$($e.FormattedValue)".Trim().Trim('"')
+        $v = "$($e.FormattedValue)".Trim()
         $err = $null
         if ($e.ColumnIndex -eq 0) {
             if ($v -and $v -notmatch '^[a-z0-9]$') { $err = "Invalid key: '$v' (a-z, 0-9 only)" }
@@ -438,23 +456,24 @@ function Show-Settings {
     })
 
     # --- apply + auto-save after Enter ---
-    $props = 'hotkey', 'name', 'group', 'path'
+    $props = 'hotkey', 'name', 'group', 'command'
     $g.Add_CellEndEdit({
         param($s, $e)
         $r = $s.Rows[$e.RowIndex]; $t = $r.Tag; $col = $e.ColumnIndex; $prop = $props[$col]
-        $v = "$($r.Cells[$col].Value)".Trim().Trim('"')
+        $v = "$($r.Cells[$col].Value)".Trim()
         if ($col -eq 0) { $v = $v.ToLower() }
         $r.Cells[$col].Value = $v
         if ($v -ceq [string]$t.$prop) { return }   # unchanged or Esc: nothing to save
         $t.$prop = $v
         try {
             Save-Tools
-            $found = $true
-            if ($col -eq 3) {
-                $x = [Environment]::ExpandEnvironmentVariables($v)
-                $found = try { $x -match '^[a-z][a-z0-9+.-]+:' -or [bool](Get-Command $x -ErrorAction Ignore) -or (Test-Path -LiteralPath $x -ErrorAction Ignore) } catch { $false }
+            $warn = $null
+            if ($col -eq 3) {                                   # syntax check only, nothing is executed
+                $tok = $null; $perr = $null
+                [void][Management.Automation.Language.Parser]::ParseInput($v, [ref]$tok, [ref]$perr)
+                if ($perr.Count) { $warn = $perr[0].Message }
             }
-            if ($found) { & $say "Saved: $($t.name)" $false } else { & $say "Saved: $($t.name) (warning: path not found)" $true }
+            if ($warn) { & $say "Saved: $($t.name) (syntax warning: $warn)" $true } else { & $say "Saved: $($t.name)" $false }
         } catch { & $say "Save failed: $($_.Exception.Message)" $true }
     })
 
