@@ -1,10 +1,8 @@
-﻿#requires -Version 5.1
 <#
   Tool Launcher (WinForms) - Windows PowerShell 5.1 / pwsh 7
   GUI : powershell -STA -File .\Launcher.ps1
   Run : .\Launcher.ps1 -Run <id|hotkey>     (headless, used by shortcuts / links)
   tools.json fields: hotkey, name, group, command (PowerShell), cwd, admin, console
-  Save this file as UTF-8 with BOM.
 #>
 param([string]$Run)
 
