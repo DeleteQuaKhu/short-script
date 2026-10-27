@@ -40,7 +40,7 @@ $txtFlags = 'VerticalCenter, Left, EndEllipsis, NoPrefix'
 $Anim = $true                          # $false = no timer, no chevrons, no mascot
 $Chev = '', '>', '>>', '>>>'
 $script:Tick = 0; $script:Face = 'idle'; $script:FaceUntil = 0
-$script:Sweep = $null; $script:ErrRow = -1; $script:ErrUntil = 0; $script:OnResult = $null
+$script:JsonFixed = $false; $script:Sweep = $null; $script:ErrRow = -1; $script:ErrUntil = 0; $script:OnResult = $null
 $TW        = 14                        # width of the speed-trail area left of the plane
 $PlaneRows = @(                        # 10 rows x 38 cols: slightly tilted, far wing short, near wing + keel for depth
     " '-----..____                         "
@@ -119,7 +119,14 @@ function Convert-LegacyArg([string]$s) {
 }
 
 function Import-Tools {
-    $raw = Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json
+    $txt = Get-Content $cfg -Raw -Encoding UTF8
+    try { $raw = $txt | ConvertFrom-Json }
+    catch {                                               # strict parse failed: retry once without trailing commas
+        $fixed = [regex]::Replace($txt, ',(\s*[\]}])', '$1')
+        if ($fixed -ceq $txt) { throw }
+        $raw = $fixed | ConvertFrom-Json
+        $script:JsonFixed = $true
+    }
     $ids = @{}
     $out = foreach ($t in @($raw | ForEach-Object { $_ })) {   # ForEach-Object { $_ }: PS 5.1 returns the whole array as one object
         if (-not $t.name) { continue }
@@ -179,7 +186,12 @@ function Start-Tool($t) {
 
 # ============================== Load ==============================
 $tools = @(); $loadErr = $null
-try { $tools = Import-Tools } catch { $loadErr = "tools.json: $($_.Exception.Message)" }
+try { $tools = Import-Tools }
+catch {
+    $m = $_.Exception.Message -replace '\s+', ' '
+    if ($m.Length -gt 110) { $m = $m.Substring(0, 110) + '...' }
+    $loadErr = "tools.json: $m"
+}
 
 # ============================== Headless: -Run ==============================
 if ($Run) {
@@ -527,7 +539,7 @@ $form.Add_KeyDown({
 # ============================== Go ==============================
 Update-List ''
 if ($loadErr)         { Set-Status $loadErr $true }
-elseif (Test-Dups)    { Set-Status "Loaded $($tools.Count) tools  |  F2: Settings" }
+elseif (Test-Dups)    { Set-Status ("Loaded $($tools.Count) tools  |  F2: Settings" + $(if ($script:JsonFixed) { "  |  tools.json had a trailing comma (fixed in memory)" })) }
 [void]$list.Focus()
 if ($Anim) { $timer.Start() }
 [void]$form.ShowDialog()
