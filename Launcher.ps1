@@ -2,7 +2,10 @@
   Tool Launcher (WinForms) - Windows PowerShell 5.1 / pwsh 7
   GUI : powershell -STA -File .\Launcher.ps1
   Run : .\Launcher.ps1 -Run <id|hotkey>     (headless, used by shortcuts / links)
-  tools.json fields: hotkey, name, group, command (PowerShell), cwd, admin, console
+  tools.json fields: hotkey, name, group, command, cwd, admin, console, type
+  type = "file": command is a file name/path (e.g. z.cmd); it is located automatically (see Find-File)
+  Portable layout (copy the whole folder anywhere):  Launcher.ps1 + tools.json + tool_lib\  (your .cmd/.bat/.ps1/.exe files)
+  %TOOLLIB% / $env:TOOLLIB = the tool_lib folder, usable in command and cwd. Built-in apps (calc.exe, ms-clock:, ...) need nothing.
 #>
 param([string]$Run)
 
@@ -44,15 +47,15 @@ $script:JsonFixed = $false; $script:Sweep = $null; $script:ErrRow = -1; $script:
 $TW        = 14                        # width of the speed-trail area left of the plane
 $PlaneRows = @(                        # 10 rows x 38 cols: slightly tilted, far wing short, near wing + keel for depth
     " '-----..____                         "
-    "|'---..___   '-----..____             "
-    "|            '---..___   '-----..___  "
-    "|                       '------------>"
+    "  |'---..___   '-----..____             "
+    "   |            '---..___   '-----..___  "
+    "    |                       '------------>"
     "<----------------------.         .-'  "
-    "|                __..--' __..---'     "
-    "|        __..--' __..---'             "
-    "|__..--' __..---'                     "
+    "    |                __..--' __..---'     "
+    "   |        __..--' __..---'             "
+    "  |__..--' __..---'                     "
     "|__..---'                             "
-    "          '-.__________..-'           "
+    "                                      "
 )
 $TrailPat   = '=---  --  -----  -  ~- '
 $SmokePat   = '.  o  .   ..  o '
@@ -88,6 +91,13 @@ function Get-Plane([string]$state, [int]$t) {
 # ============================== Config ==============================
 $cfg      = Join-Path $PSScriptRoot 'tools.json'
 $utf8     = [Text.UTF8Encoding]::new($false)
+# portable tool folder next to this script; exposed to commands via %TOOLLIB% / $env:TOOLLIB (child processes inherit it)
+$script:ToolLib = Join-Path $PSScriptRoot 'tool_lib'
+if (-not (Test-Path -LiteralPath $script:ToolLib)) { try { [void](New-Item -ItemType Directory -Path $script:ToolLib -Force) } catch {} }
+$env:TOOLLIB = $script:ToolLib
+# optional extra folders searched recursively by type=file as a last resort (e.g. 'D:\tools'); empty = fully portable
+$script:SearchRoots = @()
+$script:FileCache   = @{}
 
 if (-not (Test-Path $cfg)) {
     [IO.File]::WriteAllText($cfg, @'
@@ -163,14 +173,96 @@ function Test-Dups {
     $d.Count -eq 0
 }
 
+function Resolve-Cwd([string]$s) {
+    # expand %VAR% and ~, strip quotes, resolve relative paths against the script folder (NOT the caller's cwd)
+    $s = [Environment]::ExpandEnvironmentVariables($s.Trim().Trim([char[]]@('"', "'")).Trim())
+    if (-not $s) { return $null }
+    if ($s -match '^~([\\/]|$)') { $s = $env:USERPROFILE + $s.Substring(1) }
+    if (-not [IO.Path]::IsPathRooted($s)) { $s = Join-Path $PSScriptRoot $s }
+    $s
+}
+
+function Find-File([string]$name, [string]$cwd) {
+    # order: tool_lib (direct, then recursive) -> absolute path -> cwd -> script folder -> PATH -> $SearchRoots (recursive)
+    # an absolute path that does not exist here (e.g. config moved to another PC/drive) falls back to a search by file name
+    $name = [Environment]::ExpandEnvironmentVariables($name.Trim().Trim([char[]]@('"', "'")).Trim())
+    if (-not $name) { return $null }
+    $key = "$cwd|$name"
+    $hit = $script:FileCache[$key]
+    if ($hit -and (Test-Path -LiteralPath $hit -PathType Leaf)) { return $hit }
+
+    $found = $null
+    $rooted = [IO.Path]::IsPathRooted($name)
+    if ($rooted -and (Test-Path -LiteralPath $name -PathType Leaf)) { $found = (Resolve-Path -LiteralPath $name).ProviderPath }
+    $leaf = Split-Path -Leaf $name
+
+    if (-not $found -and (Test-Path -LiteralPath $script:ToolLib -PathType Container)) {
+        if (-not $rooted) {
+            $f = Join-Path $script:ToolLib $name
+            if (Test-Path -LiteralPath $f -PathType Leaf) { $found = (Resolve-Path -LiteralPath $f).ProviderPath }
+        }
+        if (-not $found) {
+            $f = Get-ChildItem -LiteralPath $script:ToolLib -Filter $leaf -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f) { $found = $f.FullName }
+        }
+    }
+    if (-not $found -and -not $rooted) {
+        foreach ($d in @($cwd, $PSScriptRoot)) {
+            if (-not $d) { continue }
+            $f = Join-Path $d $name
+            if (Test-Path -LiteralPath $f -PathType Leaf) { $found = (Resolve-Path -LiteralPath $f).ProviderPath; break }
+        }
+    }
+    if (-not $found) {
+        $c = Get-Command $leaf -CommandType Application, ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($c) { $found = $c.Source }
+    }
+    if (-not $found) {
+        foreach ($r in @($cwd) + $script:SearchRoots) {
+            if (-not $r -or -not (Test-Path -LiteralPath $r -PathType Container)) { continue }
+            $f = Get-ChildItem -LiteralPath $r -Filter $leaf -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f) { $found = $f.FullName; break }
+        }
+    }
+    if ($found) { $script:FileCache[$key] = $found }
+    $found
+}
+
 function Start-Tool($t) {
+    $isFile = "$($t.type)" -ieq 'file'
+    $fail = {
+        param($m)
+        Set-Status $m $true
+        if ($script:OnResult) { $null = & $script:OnResult $false $t }
+        $false
+    }
+
+    # working dir: for type=file an invalid cwd is ignored (the file's own folder is used instead)
+    $wd = $null
+    if ($t.cwd) {
+        $wd = Resolve-Cwd ([string]$t.cwd)
+        if ($wd -and (Test-Path -LiteralPath $wd -PathType Leaf)) { $wd = Split-Path -Parent $wd }
+        if ($wd -and -not (Test-Path -LiteralPath $wd -PathType Container)) {
+            if (-not $isFile) { return (& $fail "Error: working directory not found: $wd  (tool '$($t.name)', field cwd)") }
+            $wd = $null
+        }
+    }
+
+    $cmd = [string]$t.command
+    if ($isFile) {
+        $f = Find-File $cmd $wd
+        if (-not $f) { return (& $fail "Error: file not found: $cmd  (searched tool_lib, cwd, script folder, PATH)") }
+        if (-not $wd) { $wd = Split-Path -Parent $f }
+        $cmd = "Start-Process -FilePath '" + $f.Replace("'", "''") + "' -WorkingDirectory '" + $wd.Replace("'", "''") + "'"
+    }
+
     # the command runs in a separate PowerShell process (same edition as the launcher); -EncodedCommand avoids all quoting issues
-    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([string]$t.command))
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
     $ps  = @('-NoProfile', '-ExecutionPolicy', 'Bypass')
     if ($t.console) { $ps += '-NoExit' }               # keep the window open so output/errors stay visible
     $ps += '-EncodedCommand', $enc
     $p = @{ FilePath = (Get-Process -Id $PID).Path; ArgumentList = $ps; WindowStyle = $(if ($t.console) { 'Normal' } else { 'Hidden' }) }
-    if ($t.cwd)   { $p.WorkingDirectory = [Environment]::ExpandEnvironmentVariables([string]$t.cwd) }
+    if ($wd)      { $p.WorkingDirectory = $wd }
     if ($t.admin) { $p.Verb             = 'RunAs' }
     try {
         Start-Process @p -ErrorAction Stop
@@ -178,9 +270,7 @@ function Start-Tool($t) {
         if ($script:OnResult) { $null = & $script:OnResult $true $t }
         $true
     } catch {
-        Set-Status "Error: $($_.Exception.Message)" $true
-        if ($script:OnResult) { $null = & $script:OnResult $false $t }
-        $false
+        & $fail "Error: $($_.Exception.Message)"
     }
 }
 
@@ -408,7 +498,7 @@ function Show-Settings {
     $dlg = New-Object Windows.Forms.Form -Property @{
         Text = 'Settings - Hotkeys & Commands'; StartPosition = 'CenterParent'; FormBorderStyle = 'FixedDialog'
         MinimizeBox = $false; MaximizeBox = $false; ShowInTaskbar = $false; KeyPreview = $true
-        ClientSize = [Drawing.Size]::new(880, 360); BackColor = $C.Bg; ForeColor = $C.Accent; Font = $font
+        ClientSize = [Drawing.Size]::new(880, 404); BackColor = $C.Bg; ForeColor = $C.Accent; Font = $font
     }
     Set-DarkTitle $dlg
 
@@ -425,14 +515,15 @@ function Show-Settings {
     $cs.BackColor = $C.Bg; $cs.ForeColor = $C.Accent; $cs.SelectionBackColor = $C.Sel; $cs.SelectionForeColor = $C.AccentHi
     [void]$g.Columns.Add('hk', 'Key'); [void]$g.Columns.Add('name', 'Name')
     [void]$g.Columns.Add('grp', 'Group'); [void]$g.Columns.Add('cmd', 'Command (PowerShell)')
-    $w = 10, 25, 15, 50
-    for ($i = 0; $i -lt 4; $i++) {
+    [void]$g.Columns.Add('cwd', 'Working dir (optional)'); [void]$g.Columns.Add('type', 'Type (ps/file)')
+    $w = 7, 17, 10, 33, 23, 10
+    for ($i = 0; $i -lt 6; $i++) {
         $g.Columns[$i].FillWeight = $w[$i]
     }
     $g.Columns[0].DefaultCellStyle.Font = $fontBold
     $g.Columns[0].DefaultCellStyle.ForeColor = $C.AccentHi
     foreach ($t in $tools) {
-        $i = $g.Rows.Add([string]$t.hotkey, [string]$t.name, [string]$t.group, [string]$t.command)
+        $i = $g.Rows.Add([string]$t.hotkey, [string]$t.name, [string]$t.group, [string]$t.command, [string]$t.cwd, [string]$t.type)
         $g.Rows[$i].Tag = $t
     }
     $g.Add_HandleCreated({
@@ -446,7 +537,11 @@ function Show-Settings {
         Padding = [Windows.Forms.Padding]::new(10, 0, 0, 0); Text = $hintDef
     }
     $say = { param($m, $isErr) $hint.ForeColor = $(if ($isErr) { $C.Err } else { $C.Muted }); $hint.Text = $m }
-    $dlg.Controls.AddRange(@($g, $hint))   # hint is docked first, grid fills the rest
+    $bar = New-Object Windows.Forms.Panel -Property @{ Dock = 'Bottom'; Height = 44; BackColor = $C.Bg }
+    $btnAdd = New-Btn '+ Add' 100; $btnAdd.Location = [Drawing.Point]::new(10, 7)
+    $btnDel = New-Btn 'Delete' 100; $btnDel.Location = [Drawing.Point]::new(118, 7)
+    $bar.Controls.AddRange(@($btnAdd, $btnDel))
+    $dlg.Controls.AddRange(@($g, $bar, $hint))   # last added is docked first: hint bottom, then bar, grid fills the rest
 
     # --- validate before the edit is committed ---
     $g.Add_CellValidating({
@@ -462,26 +557,32 @@ function Show-Settings {
             }
         }
         elseif (($e.ColumnIndex -eq 1 -or $e.ColumnIndex -eq 3) -and -not $v) { $err = 'This field cannot be empty' }
+        elseif ($e.ColumnIndex -eq 5 -and $v -and $v -notmatch '^(ps|file)$') { $err = "Type must be 'ps' (PowerShell command, default) or 'file' (auto-located file)" }
         if ($err) { $e.Cancel = $true; & $say $err $true } else { & $say $hintDef $false }
     })
 
     # --- apply + auto-save after Enter ---
-    $props = 'hotkey', 'name', 'group', 'command'
+    $props = 'hotkey', 'name', 'group', 'command', 'cwd', 'type'
     $g.Add_CellEndEdit({
         param($s, $e)
         $r = $s.Rows[$e.RowIndex]; $t = $r.Tag; $col = $e.ColumnIndex; $prop = $props[$col]
         $v = "$($r.Cells[$col].Value)".Trim()
-        if ($col -eq 0) { $v = $v.ToLower() }
+        if ($col -eq 0 -or $col -eq 5) { $v = $v.ToLower() }
         $r.Cells[$col].Value = $v
         if ($v -ceq [string]$t.$prop) { return }   # unchanged or Esc: nothing to save
-        $t.$prop = $v
+        if ($t.PSObject.Properties[$prop]) { $t.$prop = $v }
+        else { Add-Member -InputObject $t -NotePropertyName $prop -NotePropertyValue $v -Force }   # e.g. cwd absent in old entries
         try {
             Save-Tools
             $warn = $null
-            if ($col -eq 3) {                                   # syntax check only, nothing is executed
+            if ($col -eq 3 -and "$($t.type)" -ine 'file') {       # syntax check only, nothing is executed
                 $tok = $null; $perr = $null
                 [void][Management.Automation.Language.Parser]::ParseInput($v, [ref]$tok, [ref]$perr)
                 if ($perr.Count) { $warn = $perr[0].Message }
+            }
+            if ($col -eq 4 -and $v) {
+                $wd = Resolve-Cwd $v
+                if ($wd -and -not (Test-Path -LiteralPath $wd)) { $warn = "working dir not found: $wd" }
             }
             if ($warn) { & $say "Saved: $($t.name) (syntax warning: $warn)" $true } else { & $say "Saved: $($t.name)" $false }
         } catch { & $say "Save failed: $($_.Exception.Message)" $true }
@@ -498,6 +599,32 @@ function Show-Settings {
     $dlg.Add_KeyDown({
         param($s, $e)
         if ($e.KeyCode -eq 'Escape' -and -not $g.IsCurrentCellInEditMode) { $dlg.Close() }
+    })
+
+    $btnAdd.Add_Click({
+        $base = 'new-tool'; $id = $base; $n = 2
+        while (@($script:tools | Where-Object { $_.id -ceq $id }).Count) { $id = "$base-$n"; $n++ }
+        $nt = [pscustomobject]@{ id = $id; hotkey = ''; name = 'New tool'; group = ''; command = 'Start-Process notepad.exe'; cwd = ''; type = '' }
+        try {
+            $script:tools = @($script:tools) + $nt
+            Save-Tools
+            $i = $g.Rows.Add('', $nt.name, '', $nt.command, '', '')
+            $g.Rows[$i].Tag = $nt
+            $g.ClearSelection(); $g.Rows[$i].Selected = $true
+            $g.CurrentCell = $g.Rows[$i].Cells[0]; [void]$g.BeginEdit($true)   # start on the Key cell
+            & $say 'Added. Set Key (a-z, 0-9), Name, Command; Enter to apply.' $false
+        } catch { & $say "Add failed: $($_.Exception.Message)" $true }
+    })
+    $btnDel.Add_Click({
+        if (-not $g.CurrentRow) { return }
+        $r = $g.CurrentRow; $t = $r.Tag
+        if ([Windows.Forms.MessageBox]::Show("Delete '$($t.name)'?", 'Tool Launcher', 'YesNo', 'Question') -ne 'Yes') { return }
+        try {
+            $script:tools = @($script:tools | Where-Object { $_.id -cne $t.id })
+            Save-Tools
+            $g.Rows.Remove($r)
+            & $say "Deleted: $($t.name)" $false
+        } catch { & $say "Delete failed: $($_.Exception.Message)" $true }
     })
 
     [void]$dlg.ShowDialog($form)
